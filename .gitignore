@@ -11,3 +11,5 @@ results/
 cache/
 .env
 .DS_Store
+evals/generated*.json
+*.benchmark.json

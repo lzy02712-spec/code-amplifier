@@ -23,11 +23,11 @@ Use disciplined execution and external evidence to improve coding-task reliabili
 
 Follow this sequence for repository-changing tasks:
 
-`DISCOVER -> UNDERSTAND -> ACCEPTANCE -> PLAN -> IMPLEMENT -> VERIFY -> AUDIT -> DONE`
+`DISCOVER -> UNDERSTAND -> ACCEPTANCE -> PLAN -> IMPLEMENT -> HARD_VERIFY -> SOFT_VERIFY -> DECIDE -> AUDIT -> DONE`
 
-On verification failure:
+On verification failure or weak progress:
 
-`VERIFY -> CLASSIFY_FAILURE -> REPAIR -> VERIFY`
+`HARD_VERIFY/SOFT_VERIFY -> CLASSIFY_FAILURE -> REPAIR | REPLAN | RESAMPLE -> HARD_VERIFY`
 
 Do not transition directly from `IMPLEMENT` to `DONE`.
 
@@ -97,9 +97,9 @@ During implementation:
 - re-read affected code after substantial edits;
 - preserve user changes already present in the worktree.
 
-## 6. VERIFY
+## 6. HARD VERIFY
 
-Verification is a hard gate.
+Deterministic verification is the hard gate and has final veto power.
 
 When available, run:
 
@@ -124,7 +124,38 @@ Read `references/verification.md` for gate semantics and `references/failure-tax
 
 A task with a material `FAIL` is not complete. A task with a material `UNKNOWN` is not verified.
 
-## 7. CLASSIFY_FAILURE AND REPAIR
+## 7. SOFT VERIFY AND PROGRESS
+
+After hard verification, use soft verification for criteria that repository commands cannot fully prove: requirement coverage, root-cause quality, architecture fit, regression risk, and security reasoning.
+
+When available:
+
+```bash
+python <skill-dir>/scripts/soft_verifier.py \
+  --task-file <task.txt> \
+  --trajectory <trajectory.txt> \
+  --verification <verification.json> \
+  --backend heuristic \
+  --output <soft.json>
+```
+
+If the optional `llm-verifier` package is configured, prefer `--backend llm-verifier` for trajectory progress scoring. An OpenAI-compatible structured verifier is available through `--backend openai-json`.
+
+Never allow a soft score to override deterministic `FAIL`. Read `references/soft-verification.md`.
+
+Use progress history to choose the next action instead of blindly retrying:
+
+```bash
+python <skill-dir>/scripts/progress.py \
+  --scores <comma-separated-progress> \
+  --hard-status <PASS|FAIL|UNKNOWN|NOT_CONFIGURED> \
+  --repeated-failures <n> \
+  --budget-fraction <0..1>
+```
+
+Valid actions are `CONTINUE`, `GATHER_EVIDENCE`, `REPAIR`, `REPLAN`, `RESAMPLE`, `DONE`, and `STOP`.
+
+## 8. CLASSIFY_FAILURE AND REPAIR
 
 Classify each meaningful failure as one of:
 
@@ -154,7 +185,7 @@ Default repair loop:
 
 Do not perform more than three blind repair cycles for the same unchanged failure signature. After that, stop guessing, gather new evidence, or report the blocker.
 
-## 8. AUDIT
+## 9. AUDIT
 
 Before `DONE`:
 
@@ -182,6 +213,20 @@ python <skill-dir>/scripts/evidence.py \
 
 Read `references/final-audit.md` for the final gate.
 
+## Automated benchmark mode
+
+When evaluating the Skill itself, keep benchmark orchestration outside the agent trajectory. Generate hidden-oracle tasks and run paired worktrees:
+
+```bash
+python <skill-dir>/scripts/generate_evals.py --root <target-repo> --limit 20 --output <evals.json>
+python <skill-dir>/scripts/benchmark.py \
+  --repo <target-repo> \
+  --evals <evals.json> \
+  --agent-command '<coding-agent argv template>'
+```
+
+Direct and Amplified runs must start from the same base revision and receive the same prompt, model, permissions, and budget. The Amplified treatment is the presence of this Skill. Do not expose `oracle` fields to the agent. Read `references/benchmarking.md`.
+
 ## Completion gate
 
 Use `DONE` only when:
@@ -190,6 +235,8 @@ Use `DONE` only when:
 - every material requirement is `PASS`;
 - no material verification check is `FAIL`;
 - no material requirement is `UNKNOWN`;
+- deterministic verification has not failed;
+- soft verification is used only as supplemental evidence;
 - the final diff has been inspected;
 - the final report accurately distinguishes what was verified from what was not run.
 

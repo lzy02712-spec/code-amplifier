@@ -1,40 +1,43 @@
 # Evaluation protocol
 
-The initial eval set is designed for paired comparison:
+V2 supports fully automated paired benchmarks.
 
-- Baseline: same coding model and host, no `coding-amplifier` skill.
-- Treatment: same coding model and host, `coding-amplifier` enabled.
+## Generate evals automatically
 
-Keep model, temperature, repository revision, task prompt, tool permissions, and time/token budget as similar as the host allows.
+```bash
+python scripts/generate_evals.py \
+  --root /path/to/target-repo \
+  --limit 20 \
+  --output evals/generated.json
+```
+
+The generator mines real non-merge Git history. Prompts are derived from commit subjects; future commit metadata is retained under `oracle` and is never passed to the coding agent.
+
+## Run Direct vs Amplified automatically
+
+```bash
+python scripts/benchmark.py \
+  --repo /path/to/target-repo \
+  --evals evals/generated.json \
+  --agent-command 'my-coding-agent --workspace {workspace} --task-file {task_file}' \
+  --output results/benchmark.json \
+  --report results/report.md
+```
+
+The same agent command runs in two isolated worktrees. Amplified mode receives the Agent Skill automatically; Direct mode does not.
 
 ## Primary metric
 
-**Task success rate**: all material acceptance criteria are satisfied and the repository's relevant deterministic gates pass.
+Task success rate under the configured acceptance gate:
+
+- hard verification must pass;
+- soft score must meet threshold;
+- the agent must have produced a real non-skill change.
 
 ## Secondary metrics
 
-Record for each run:
+Record hard status, soft score, elapsed time, changed files, oracle file overlap, captured trajectory tail, and optional provider-side token/cost data when the host exposes it.
 
-- model and host;
-- success/failure;
-- requirement pass count;
-- deterministic verification completeness;
-- repair rounds;
-- tokens;
-- estimated cost;
-- elapsed time;
-- files changed;
-- whether tests were weakened/disabled;
-- whether the agent falsely claimed completion before verification.
+## Fairness
 
-## Suggested ablation
-
-Compare:
-
-1. baseline model;
-2. model + planning only;
-3. model + planning + verification;
-4. model + planning + verification + repair;
-5. full skill including requirement ledger and final audit.
-
-This shows which parts create the improvement instead of attributing every gain to a large prompt.
+Keep model, agent host, repository revision, task prompt, permissions, timeout, and provider configuration fixed between Direct and Amplified. The intended treatment variable is the CodeAmplifier Skill.

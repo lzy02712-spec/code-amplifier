@@ -1,0 +1,11 @@
+{
+  "note": "CLI-equivalent example; the benchmark runner accepts an argv template through --agent-command.",
+  "agent_command_examples": {
+    "generic": "my-coding-agent --workspace {workspace} --task-file {task_file}",
+    "prompt_argument": "my-coding-agent run {prompt}"
+  },
+  "soft_backend": "heuristic",
+  "soft_threshold": 0.72,
+  "timeout_seconds": 1800,
+  "verify_timeout_seconds": 300
+}
