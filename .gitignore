@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+verification.json
+diff.json
+evidence.json
+requirements.json
+results/
+cache/
+.env
+.DS_Store

@@ -1,0 +1,8 @@
+{
+  "commands": {
+    "compile": ["./mvnw", "-q", "-DskipTests", "compile"],
+    "test": ["./mvnw", "-q", "test"],
+    "lint": null,
+    "typecheck": null
+  }
+}

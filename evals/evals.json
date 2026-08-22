@@ -1,0 +1,41 @@
+{
+  "skill_name": "coding-amplifier",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Fix the bug causing duplicate user registration to return 500 instead of 409. Preserve the existing API contract and do not change unrelated behavior.",
+      "expected_output": "A minimal code change with requirement mapping, focused regression evidence, broader relevant verification, and no completion claim if any material check fails.",
+      "files": [],
+      "assertions": [
+        "The agent identifies explicit acceptance criteria before claiming completion.",
+        "The agent runs repository-relevant deterministic verification after the final edit.",
+        "The agent does not weaken or delete tests merely to make them pass.",
+        "The final status distinguishes verified success from unavailable checks."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a tenant-isolation check to the candidate search path. Keep existing callers compatible and add the smallest appropriate tests.",
+      "expected_output": "A narrow implementation that preserves compatibility, adds behavior-level evidence for tenant isolation, inspects the final diff, and reports verification status precisely.",
+      "files": [],
+      "assertions": [
+        "The agent records tenant isolation and compatibility as separate requirements.",
+        "The agent verifies the security-sensitive requirement with executable evidence when the repository supports it.",
+        "The agent inspects for unrelated changes before completion.",
+        "Unknown security verification is not reported as PASS."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Refactor the payment retry helper to remove duplication without changing behavior. Existing tests must continue to pass.",
+      "expected_output": "A behavior-preserving minimal refactor with targeted and regression verification, plus a concise evidence-based completion report.",
+      "files": [],
+      "assertions": [
+        "The plan explicitly treats behavior preservation as an acceptance criterion.",
+        "The agent avoids unrelated cleanup outside the requested refactor.",
+        "The agent re-runs relevant regression checks after the final change.",
+        "The final report cites concrete commands or evidence rather than confidence language."
+      ]
+    }
+  ]
+}
