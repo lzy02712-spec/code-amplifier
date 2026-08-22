@@ -3,7 +3,10 @@
 
 The same agent command is run in two isolated Git worktrees. Amplified mode
 installs this Agent Skill into `.agents/skills/coding-amplifier`; direct mode
-does not. Hidden oracle metadata is never included in the task prompt.
+does not. Hidden oracle metadata and future tests are never passed to the agent.
+
+V2.1 strict grading only counts tasks whose future tests are independently
+validated to FAIL on the base revision and PASS on the recorded target commit.
 """
 from __future__ import annotations
 
@@ -24,9 +27,10 @@ SKILL_ROOT = SCRIPT_DIR.parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import hidden_grader  # noqa: E402
+import report as report_mod  # noqa: E402
 import soft_verifier  # noqa: E402
 import verify as hard_verify  # noqa: E402
-import report as report_mod  # noqa: E402
 
 SKILL_RUNTIME_FILES = [
     "SKILL.md",
@@ -118,7 +122,17 @@ def _file_overlap(actual: list[str], expected: list[str]) -> float:
     return round(len(a & e) / len(e), 4)
 
 
-def _run_one(repo: Path, task: dict[str, Any], mode: str, command: list[str], timeout: int, verify_timeout: int, soft_backend: str, soft_threshold: float) -> dict[str, Any]:
+def _run_one(
+    repo: Path,
+    task: dict[str, Any],
+    mode: str,
+    command: list[str],
+    timeout: int,
+    verify_timeout: int,
+    soft_backend: str,
+    soft_threshold: float,
+    oracle_validation: dict[str, Any],
+) -> dict[str, Any]:
     base_ref = task["base_ref"]
     with tempfile.TemporaryDirectory(prefix=f"codeamp-{mode}-") as tmp:
         workspace = Path(tmp) / "workspace"
@@ -128,21 +142,41 @@ def _run_one(repo: Path, task: dict[str, Any], mode: str, command: list[str], ti
             hard = hard_verify.verify(workspace, verify_timeout)
             trajectory = (agent.get("stdout", "") + "\n" + agent.get("stderr", "")).strip()
             soft = soft_verifier.verify_soft(task["prompt"], trajectory, hard, task.get("criteria"), backend=soft_backend)
+
+            # Capture the agent's own diff before hidden tests are overlaid.
             changed = _changed_files(workspace, base_ref)
             expected = task.get("oracle", {}).get("changed_files", [])
             overlap = _file_overlap(changed, expected)
-            success = hard.get("overall_status") == "PASS" and float(soft.get("score", 0.0)) >= soft_threshold and bool(changed)
+
+            hidden = hidden_grader.grade_workspace(repo, workspace, task, oracle_validation, verify_timeout)
+            gradable = oracle_validation.get("status") == "VALID"
+            provisional_success = (
+                hard.get("overall_status") == "PASS"
+                and float(soft.get("score", 0.0)) >= soft_threshold
+                and bool(changed)
+            )
+            strict_success = (
+                hard.get("overall_status") == "PASS"
+                and hidden.get("status") == "PASS"
+                and bool(changed)
+            ) if gradable else None
+
             return {
                 "task_id": task.get("id"),
                 "mode": mode,
-                "success": success,
+                "gradable": gradable,
+                "success": strict_success,
+                "provisional_success": provisional_success,
                 "agent_exit_code": agent.get("exit_code"),
                 "elapsed_seconds": agent.get("elapsed_seconds", 0.0),
                 "hard_status": hard.get("overall_status"),
+                "hidden_status": hidden.get("status"),
                 "soft_score": soft.get("score", 0.0),
                 "soft_backend": soft.get("backend"),
                 "changed_files": changed,
                 "oracle_file_overlap": overlap,
+                "oracle_validation": oracle_validation,
+                "hidden_grader": hidden,
                 "verification": hard,
                 "soft_verification": soft,
                 "trajectory_tail": trajectory[-20000:],
@@ -152,12 +186,41 @@ def _run_one(repo: Path, task: dict[str, Any], mode: str, command: list[str], ti
             _git(repo, "worktree", "prune", check=False)
 
 
-def run_benchmark(repo: Path, evals: list[dict[str, Any]], command: list[str], timeout: int = 1800, verify_timeout: int = 300, soft_backend: str = "heuristic", soft_threshold: float = 0.72, modes: tuple[str, ...] = ("direct", "amplified")) -> dict[str, Any]:
+def run_benchmark(
+    repo: Path,
+    evals: list[dict[str, Any]],
+    command: list[str],
+    timeout: int = 1800,
+    verify_timeout: int = 300,
+    soft_backend: str = "heuristic",
+    soft_threshold: float = 0.72,
+    modes: tuple[str, ...] = ("direct", "amplified"),
+) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
+    oracle_validations: dict[str, dict[str, Any]] = {}
     for task in evals:
+        task_id = str(task.get("id"))
+        validation = hidden_grader.validate_oracle(repo, task, verify_timeout)
+        oracle_validations[task_id] = validation
         for mode in modes:
-            rows.append(_run_one(repo, task, mode, command, timeout, verify_timeout, soft_backend, soft_threshold))
-    return {"schema_version": 2, "repository": str(repo.resolve()), "runs": rows, "summary": report_mod.summarize(rows)}
+            rows.append(_run_one(
+                repo,
+                task,
+                mode,
+                command,
+                timeout,
+                verify_timeout,
+                soft_backend,
+                soft_threshold,
+                validation,
+            ))
+    return {
+        "schema_version": 3,
+        "repository": str(repo.resolve()),
+        "oracle_validations": oracle_validations,
+        "runs": rows,
+        "summary": report_mod.summarize(rows),
+    }
 
 
 def main() -> int:
@@ -168,7 +231,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--verify-timeout", type=int, default=300)
     parser.add_argument("--soft-backend", choices=("heuristic", "llm-verifier", "openai-json"), default="heuristic")
-    parser.add_argument("--soft-threshold", type=float, default=0.72)
+    parser.add_argument("--soft-threshold", type=float, default=0.72, help="Diagnostic/provisional threshold only; strict success is determined by validated hidden tests")
     parser.add_argument("--mode", choices=("both", "direct", "amplified"), default="both")
     parser.add_argument("--output", default="results/benchmark.json")
     parser.add_argument("--report", default="results/report.md")

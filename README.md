@@ -10,9 +10,9 @@ The core loop is:
 
 The project does **not** treat model confidence as proof. Deterministic evidence has final veto power.
 
-## V2 automation core
+## V2.1 automation core
 
-V2 adds a fully automated evaluation and adaptive-verification layer:
+V2.1 adds a strict hidden-grader layer on top of the V2 automation and adaptive-verification stack:
 
 - Agent Skills-compatible `SKILL.md`
 - deterministic project detection and hard verification
@@ -20,7 +20,11 @@ V2 adds a fully automated evaluation and adaptive-verification layer:
 - optional `llm-verifier` integration for trajectory progress scoring
 - adaptive `CONTINUE / REPAIR / REPLAN / RESAMPLE / DONE` policy
 - automatic eval generation from real Git history
+- extraction of future test/spec files as hidden graders
+- oracle validation: future tests must fail on the base revision and pass on the real target revision
 - isolated Direct vs Amplified A/B benchmark worktrees
+- strict hidden-test success plus separate provisional soft metrics
+- paired win/regression reporting
 - automatic JSON + Markdown benchmark reports
 
 ## Runtime flow
@@ -140,10 +144,11 @@ Mine real historical coding tasks from any Git repository:
 python scripts/generate_evals.py \
   --root /path/to/target-repo \
   --limit 50 \
+  --require-hidden-tests \
   --output evals/generated.json
 ```
 
-Each eval contains a public task prompt plus a hidden oracle section. The future commit SHA and expected changed files are not passed to the agent.
+Each eval contains a public task prompt plus a hidden oracle section. The future commit SHA, expected changed files, and future test files are not passed to the agent. For strict benchmarking, use `--require-hidden-tests` so only commits with future test/spec changes are emitted.
 
 ## Fully automated Direct vs Amplified benchmark
 
@@ -173,7 +178,30 @@ In Amplified mode, the benchmark runner automatically installs CodeAmplifier int
 
 Direct mode receives no Skill.
 
-The benchmark records hard status, soft score, elapsed time, changed files, hidden-oracle file overlap, and captured trajectory output. Provider token/cost metrics can be added when the coding host exposes them.
+## Strict hidden grader
+
+Before either A/B run is counted, CodeAmplifier validates the oracle:
+
+```text
+base revision + future hidden tests   -> must FAIL
+target revision + same tests         -> must PASS
+```
+
+Only tasks satisfying both conditions are **strict gradable**. After the agent finishes, the benchmark overlays only those validated future test files onto the ephemeral agent workspace and runs the repository test command again. The agent never sees the hidden tests before its run.
+
+Strict success requires:
+
+```text
+public hard verification PASS
+AND
+validated hidden grader PASS
+AND
+agent produced a real code change
+```
+
+Soft verification and file-overlap are diagnostic metrics only. They cannot create a strict success. Ungradable tasks are reported separately and excluded from the strict pass-rate denominator.
+
+The benchmark records strict success, provisional success, oracle validation, hidden-test status, hard status, soft score, elapsed time, changed files, oracle-file overlap, and captured trajectory output. Provider token/cost metrics can be added when the coding host exposes them.
 
 ## Design principles
 
@@ -194,7 +222,7 @@ python -m compileall -q scripts
 
 ## Status
 
-V2 is an automation baseline. Git-history eval generation is intentionally conservative and is not yet a substitute for SWE-bench-grade hidden tests. Planned generators include mutation-validated tasks and issue/PR reconstruction.
+V2.1 introduces validated future-test grading for Git-history tasks. It is substantially stronger than the V2 soft/hard heuristic score, but it still does not make every historical commit gradable: tasks without discriminative future tests are excluded from strict statistics. Planned generators include mutation-validated tasks and issue/PR reconstruction.
 
 ## License
 
